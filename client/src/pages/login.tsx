@@ -18,7 +18,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { EmailInput } from "@/components/ui/email-input";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -30,6 +29,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, Eye, EyeOff } from "lucide-react";
 import { useLocation } from "wouter";
+
+// Get API URL from environment variable or use relative path for development
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -74,40 +76,44 @@ export default function Login() {
     mode: "onChange",
   });
 
-  // Debug form state
-  console.log('Register form values:', registerForm.getValues());
-  console.log('Register form errors:', registerForm.formState.errors);
-
   const loginMutation = useMutation({
     mutationFn: async (data: LoginFormData) => {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      try {
+        const response = await fetch(`${API_URL}/api/auth/login`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include', // Include cookies if needed
+          body: JSON.stringify(data),
+        });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ message: 'Login failed' }));
+          throw new Error(error.message || 'Invalid email or password');
+        }
+
+        return response.json();
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw new Error('Network error. Please check your connection.');
       }
-
-      return response.json();
     },
     onSuccess: (data) => {
       localStorage.setItem('token', data.token);
-      // Invalidate auth queries to refetch user data
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       toast({
         title: "Welcome back!",
         description: "You have been successfully logged in.",
       });
-      // Small delay to ensure query invalidation completes
       setTimeout(() => setLocation('/'), 100);
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Login failed",
-        description: "Invalid email or password",
+        description: error.message || "Invalid email or password",
         variant: "destructive",
       });
     },
@@ -115,36 +121,44 @@ export default function Login() {
 
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterFormData) => {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      try {
+        const response = await fetch(`${API_URL}/api/auth/register`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify(data),
+        });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ message: 'Registration failed' }));
+          throw new Error(error.message || 'Failed to create account');
+        }
+
+        return response.json();
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw new Error('Network error. Please check your connection.');
       }
-
-      return response.json();
     },
     onSuccess: (data) => {
       localStorage.setItem('token', data.token);
-      // Invalidate auth queries to refetch user data
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       toast({
         title: "Account created!",
         description: "Welcome to the Assignment Tracker.",
       });
-      // Small delay to ensure query invalidation completes
       setTimeout(() => setLocation('/'), 100);
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({
         title: "Registration failed",
-        description: error.message.includes('User already exists')
+        description: error.message.includes('already exists')
           ? "An account with this email already exists"
-          : "Failed to create account",
+          : error.message || "Failed to create account",
         variant: "destructive",
       });
     },
@@ -231,6 +245,7 @@ export default function Login() {
                           <Input
                             type={showPassword ? "text" : "password"}
                             placeholder="Enter your password"
+                            autoComplete="current-password"
                             {...field}
                           />
                           <button
@@ -293,25 +308,25 @@ export default function Login() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label htmlFor="email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    Email Address
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email (e.g., john@example.com)"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                    {...registerForm.register("email")}
-                    autoComplete="email"
-                    spellCheck="false"
-                  />
-                  {registerForm.formState.errors.email && (
-                    <p className="text-sm font-medium text-destructive">
-                      {registerForm.formState.errors.email.message}
-                    </p>
+                <FormField
+                  control={registerForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email Address</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          placeholder="Enter your email"
+                          autoComplete="email"
+                          spellCheck="false"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </div>
+                />
 
                 <FormField
                   control={registerForm.control}
@@ -324,6 +339,7 @@ export default function Login() {
                           <Input
                             type={showPassword ? "text" : "password"}
                             placeholder="Enter your password"
+                            autoComplete="new-password"
                             {...field}
                           />
                           <button
